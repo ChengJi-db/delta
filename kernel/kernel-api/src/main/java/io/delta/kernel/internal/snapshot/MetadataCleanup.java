@@ -172,7 +172,7 @@ public class MetadataCleanup {
         // Ignore non-delta and non-checkpoint files.
       }
     }
-    logger.info("{}: Deleted {} log files older than {}", tablePath, numDeleted, fileCutOffTime);
+    logger.info("{}: Deleted 1 {} log files older than {}", tablePath, numDeleted, fileCutOffTime);
     return numDeleted;
   }
 
