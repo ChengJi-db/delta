@@ -158,7 +158,7 @@ private[delta] case class DeltaTableReadPredicate(
  * than directly to the [[DeltaLog]] otherwise they will not be check for logical conflicts
  * with concurrent updates.
  *
- * This class is not thread-safe.
+ * This class is not thread-safe!
  *
  * @param deltaLog The Delta Log for the table this transaction is modifying.
  * @param snapshot The snapshot that this transaction is reading at.
