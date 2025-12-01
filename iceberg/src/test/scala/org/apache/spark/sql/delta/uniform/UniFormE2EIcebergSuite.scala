@@ -43,7 +43,7 @@ trait WriteDeltaHMSReadIceberg extends UniFormE2ETest
    * @param table  write table name
    * @param fields fields to verify, separated by comma. E.g., "col1, col2"
    * @param orderBy fields to order the results, separated by comma.
-   * @param expect expected result
+   * @param expect expected resultd
    */
   protected override def readAndVerify(
       table: String, fields: String, orderBy: String, expect: Seq[Row]): Unit = {
