@@ -2114,6 +2114,44 @@ trait OptimisticTransactionImpl extends TransactionHelper
         deltaLog.createLogDirectoriesIfNotExists()
       }
       val fsWriteStartNano = System.nanoTime()
+      // If the table has UniForm Iceberg enabled, generate Iceberg metadata atomically
+      // before the Delta commit. This requires materializing the streaming action iterator.
+      val (allActions3, catalogTrackedInfo) = catalogTable match {
+        case Some(table) if UniversalFormat.icebergEnabled(metadata) =>
+          val maxActions = 10000
+          val bufferedActions = allActions.zipWithIndex.map { case (action, idx) =>
+            if (idx >= maxActions) {
+              throw new IllegalStateException(
+                s"commitLarge with atomic UniForm Iceberg conversion does not support " +
+                s"more than $maxActions actions per commit")
+            }
+            action
+          }.toSeq
+          val txnInfo = CurrentTransactionInfo(
+            txnId = txnId,
+            readPredicates = Vector.empty,
+            readFiles = Set.empty,
+            readWholeTable = false,
+            readAppIds = Set.empty,
+            metadata = metadata,
+            protocol = protocol,
+            actions = bufferedActions,
+            readSnapshot = snapshot,
+            commitInfo = Some(commitInfo),
+            readRowIdHighWatermark = 0L,
+            catalogTable = None,
+            domainMetadata = Seq.empty,
+            op = op
+          )
+          val (updatedTxnInfo, _) = generateIcebergAndUpdateCurrentTransactionInfo(
+            spark, this, attemptVersion, txnInfo, table
+          )
+          (bufferedActions.iterator: Iterator[Action],
+            new CatalogTrackedInfo(updatedTxnInfo.convertedIcebergMetadata.toJava))
+        case _ =>
+          (allActions, CatalogTrackedInfo.EMPTY)
+      }
+      allActions = allActions3
       val jsonActions = allActions.map(_.json)
       var commitSizeBytes = 0L
       jsonActions.map { action =>
@@ -2134,7 +2172,7 @@ trait OptimisticTransactionImpl extends TransactionHelper
           jsonActions,
           updatedActions,
           catalogTable.map(_.identifier),
-          CatalogTrackedInfo.EMPTY
+          catalogTrackedInfo
         )
       }
       // TODO(coordinated-commits): Use the right timestamp method on top of CommitInfo once ICT is

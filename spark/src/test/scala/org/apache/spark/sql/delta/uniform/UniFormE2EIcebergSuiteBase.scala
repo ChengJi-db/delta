@@ -172,6 +172,44 @@ abstract class UniFormE2EIcebergSuiteBase extends UniFormE2ETest {
     }
   }
 
+  compatVersions.foreach { compatVersion =>
+    test(s"CLONE - compatV$compatVersion") {
+      withTable(testTableName, "source") {
+        write("CREATE TABLE source (col1 INT) USING DELTA TBLPROPERTIES (" +
+          "'delta.columnMapping.mode' = 'name')")
+        write("INSERT INTO source VALUES (1), (2), (3)")
+        // First clone creates a new table: catalogTable is None in commitLarge,
+        // so Iceberg metadata is NOT generated atomically here.
+        write(
+          s"""CREATE TABLE `$testTableName`
+             |SHALLOW CLONE source
+             |TBLPROPERTIES (
+             |  'delta.enableIcebergCompatV$compatVersion' = 'true',
+             |  'delta.universalFormat.enabledFormats' = 'iceberg'
+             |  ${extraTableProperties(compatVersion)}
+             |)""".stripMargin)
+        // Do NOT verify here: Iceberg metadata not generated for the initial clone commit.
+        write("INSERT INTO source VALUES (4)")
+        // REPLACE clone operates on an existing table so catalogTable is Some(...),
+        // triggering atomic Iceberg metadata generation via commitLarge.
+        // Delta OSS requires the destination to be empty before cloning.
+        write(s"DELETE FROM `$testTableName`")
+        write(
+          s"""CREATE OR REPLACE TABLE `$testTableName`
+             |SHALLOW CLONE source
+             |TBLPROPERTIES (
+             |  'delta.enableIcebergCompatV$compatVersion' = 'true',
+             |  'delta.universalFormat.enabledFormats' = 'iceberg'
+             |)""".stripMargin)
+        readAndVerify(testTableName, "col1", "col1", Seq(Row(1), Row(2), Row(3), Row(4)))
+        write(s"UPDATE `$testTableName` SET col1 = 100 WHERE col1 = 1")
+        readAndVerify(testTableName, "col1", "col1", Seq(Row(2), Row(3), Row(4), Row(100)))
+        write(s"DELETE FROM `$testTableName` WHERE col1 = 3")
+        readAndVerify(testTableName, "col1", "col1", Seq(Row(2), Row(4), Row(100)))
+      }
+    }
+  }
+
   // TODO createReaderSparkSession is no longer supported.
   // Please use readAndVerify and re-enable the cases
   /*
